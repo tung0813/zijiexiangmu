@@ -18,7 +18,8 @@ export interface Material {
   id: string;
   conversation_id: string;
   message_id: string;
-  type: 'title' | 'selling_point' | 'atmosphere' | 'video';
+  // ✅ 核心修改：添加了 'video_script'，保留原有的 'video' 以防万一
+  type: 'title' | 'selling_point' | 'atmosphere' | 'video' | 'video_script';
   content: string;
   metadata?: Record<string, any>;
   created_at: number;
@@ -28,6 +29,8 @@ export interface GenerateMaterialRequest {
   conversation_id: string;
   user_message: string;
   images?: string[];
+  // ✅ 核心修改：添加 model 字段，支持前端传模型参数
+  model?: string;
 }
 
 export interface GenerateMaterialResponse {

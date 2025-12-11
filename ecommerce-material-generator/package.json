@@ -14,11 +14,14 @@
   "dependencies": {
     "@ant-design/icons": "^5.6.1",
     "@ant-design/nextjs-registry": "^1.0.0",
-    "antd": "^5.18.0",
+    "@ant-design/v5-patch-for-react-19": "^1.0.3",
+    "antd": "^5.29.1",
     "axios": "^1.6.8",
     "dayjs": "^1.11.11",
+    "dotenv": "^17.2.3",
     "nanoid": "^5.0.7",
     "next": "16.0.3",
+    "openai": "^6.10.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "swr": "^2.2.5"
