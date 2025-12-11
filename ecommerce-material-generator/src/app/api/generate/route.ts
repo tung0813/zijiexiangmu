@@ -8,68 +8,78 @@ const envPath = path.resolve(process.cwd(), '.env');
 dotenv.config({ path: envPath });
 
 const SYSTEM_PROMPT = `
-你是一个电商营销专家。请根据用户输入生成商品素材。
-必须严格输出以下 JSON 格式（不要包含 markdown 代码块，直接返回 JSON 字符串）：
+你是一个资深电商视觉设计师。请分析用户发送的商品图片（如果有）或文本描述。
+目标：提取商品核心卖点，并生成用于贴在图片上的简短文案。
+
+请严格输出以下 JSON 格式（不要Markdown代码块，直接返回JSON）：
 {
-  "title": "商品标题(15-30字)",
-  "sellingPoints": ["卖点1", "卖点2", "卖点3"],
-  "atmosphere": "主图氛围文案(短句, 如'美好生活')",
-  "videoScript": "短视频脚本大纲(分镜描述)"
+  "title": "商品短标题(10字内)",
+  "sellingPoints": ["核心卖点1(5字内)", "核心卖点2(5字内)", "核心卖点3(5字内)"],
+  "atmosphere": "氛围短句(用于图片居中展示，如'极简美学', 4字以内)",
+  "videoScript": "简单分镜描述"
 }
 `;
 
 export async function POST(request: NextRequest) {
   try {
-    // 1. 在请求处理内部读取 Key，防止启动时崩溃
     const API_KEY = process.env.DOUBAO_API_KEY;
     const BASE_URL = process.env.DOUBAO_BASE_URL || "https://ark.cn-beijing.volces.com/api/v3";
 
-    // 2. 检查 Key 是否存在
     if (!API_KEY) {
-      console.error("❌ 【错误】未读取到 API Key。");
-      console.error("请确认 .env 文件内容不为空，且编码为 UTF-8。");
-      return NextResponse.json({ 
-        error: '服务端配置错误: 未读取到 API Key (请检查 .env 文件编码)' 
-      }, { status: 500 });
+      return NextResponse.json({ error: '服务端未配置 API Key' }, { status: 500 });
     }
 
-    // 3. 动态初始化客户端
-    const client = new OpenAI({
-      apiKey: API_KEY,
-      baseURL: BASE_URL,
-    });
+    const client = new OpenAI({ apiKey: API_KEY, baseURL: BASE_URL });
 
+    // 读取前端发送的数据
     const { conversation_id, user_message, images, model = 'doubao-pro', history = [] } = await request.json();
 
-    if (!user_message) {
-      return NextResponse.json({ error: '消息不能为空' }, { status: 400 });
-    }
-
-    // 4. 定义模型映射
+    // 模型 ID 映射
     const MODEL_MAP: Record<string, string | undefined> = {
       'doubao-pro': process.env.DOUBAO_MODEL_ID,
       'doubao-flash': process.env.DOUBAO_FLASH_MODEL_ID,
       'doubao-dream': process.env.DOUBAO_DREAM_MODEL_ID,
       'deepseek-v3': process.env.DEEPSEEK_MODEL_ID,
     };
-
     const targetModelId = MODEL_MAP[model];
-    
-    console.log(`[请求] 模型: ${model} | ID: ${targetModelId || "❌ 未找到"}`);
 
     if (!targetModelId) {
-      return NextResponse.json({ 
-        error: `未找到模型配置: ${model}。请检查 .env 文件是否包含对应 ID。` 
-      }, { status: 500 });
+      return NextResponse.json({ error: `未找到模型 ${model} 的 ID 配置` }, { status: 500 });
     }
+
+    // ==========================================
+    // 🔥 构建支持视觉 (Vision) 的消息体
+    // ==========================================
+    let userContent: any[] = [{ type: 'text', text: user_message || "请分析这张图片，生成营销素材" }];
+
+    // 如果包含图片 (Base64)，添加到消息中
+    if (images && Array.isArray(images) && images.length > 0) {
+      images.forEach((imgUrl: string) => {
+        // 确保格式符合 OpenAI Vision 标准
+        userContent.push({
+          type: "image_url",
+          image_url: {
+            url: imgUrl 
+          }
+        });
+      });
+    }
+
+    // 处理历史记录 (仅保留文本，简化处理以防 token 超限)
+    const cleanHistory = history.map((h: any) => ({
+      role: h.role,
+      content: typeof h.content === 'string' ? h.content : JSON.stringify(h.content).slice(0, 200) + '...'
+    }));
 
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
-      ...history, 
-      { role: 'user', content: user_message }
+      ...cleanHistory,
+      { role: 'user', content: userContent }
     ];
 
-    // 5. 调用 API
+    console.log(`[请求AI] 模型: ${model}, 图片数: ${images?.length || 0}`);
+
+    // 调用大模型
     const response = await client.chat.completions.create({
       model: targetModelId,
       messages: messages as any,
@@ -78,27 +88,33 @@ export async function POST(request: NextRequest) {
 
     const aiContent = response.choices[0]?.message?.content || "{}";
     
-    // 6. 解析结果
+    // 解析返回的 JSON
     let cleanJson = aiContent;
     let materialsData;
 
     try {
+      // 清理可能的 Markdown 标记
       cleanJson = aiContent.replace(/```json/g, '').replace(/```/g, '').trim();
       materialsData = JSON.parse(cleanJson);
     } catch (e) {
-      console.error("JSON解析失败:", aiContent);
-      materialsData = { title: "生成格式异常", sellingPoints: [aiContent], atmosphere: "系统提示" };
+      console.error("JSON解析失败，原始返回:", aiContent);
+      materialsData = { 
+        title: "生成解析失败", 
+        sellingPoints: ["请重试"], 
+        atmosphere: "系统繁忙", 
+        videoScript: aiContent 
+      };
     }
 
     return NextResponse.json({
-      message_id: Date.now().toString(), 
+      message_id: Date.now().toString(),
       materials: [
         { type: 'title', content: materialsData.title },
-        { type: 'selling_point', content: materialsData.sellingPoints?.join(' · ') },
+        { type: 'selling_point', content: materialsData.sellingPoints }, 
         { type: 'atmosphere', content: materialsData.atmosphere },
         { type: 'video_script', content: materialsData.videoScript }
       ],
-      rawContent: cleanJson 
+      rawContent: cleanJson
     });
 
   } catch (error: any) {
