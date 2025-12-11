@@ -21,8 +21,8 @@ const SYSTEM_PROMPT = `
 `;
 
 // 🔥 核心修改：定义支持图片的模型列表
-// 假设你这两个 Doubao 模型都是支持 Vision 的版本，如果不确定，先都加上
-const VISION_CAPABLE_MODELS = ['doubao-pro', 'doubao-plus']; 
+// 我们假设你的 ID_three 是支持 Vision 的
+const VISION_CAPABLE_MODELS = ['doubao-pro', 'doubao-latest']; 
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,16 +38,18 @@ export async function POST(request: NextRequest) {
     // 读取前端发送的数据
     const { user_message, images, model = 'doubao-pro', history = [] } = await request.json();
 
-    // 🔥 核心修改：只保留你需要的两个模型映射
+    // 🔥 核心修改：模型映射
+    // doubao-pro -> 第一个 (ID)
+    // doubao-latest -> 最后一个 (ID_three)
     const MODEL_MAP: Record<string, string | undefined> = {
-      'doubao-pro': process.env.DOUBAO_MODEL_ID,       // 第一个
-      'doubao-plus': process.env.DOUBAO_MODEL_ID_two,  // 最后一个 (新添加的)
+      'doubao-pro': process.env.DOUBAO_MODEL_ID,
+      'doubao-latest': process.env.DOUBAO_MODEL_ID_three, 
     };
     
     const targetModelId = MODEL_MAP[model];
 
     if (!targetModelId) {
-      return NextResponse.json({ error: `未找到模型 ${model} 的 ID 配置，请检查环境变量` }, { status: 500 });
+      return NextResponse.json({ error: `未找到模型 ${model} 的 ID 配置，请检查环境变量是否包含 DOUBAO_MODEL_ID_three` }, { status: 500 });
     }
 
     // 检查模型是否支持图片

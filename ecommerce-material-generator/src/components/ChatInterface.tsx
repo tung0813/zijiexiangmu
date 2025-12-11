@@ -9,10 +9,10 @@ import { Conversation } from '@/types';
 const { Sider, Content } = Layout;
 const { Text } = Typography;
 
-// 🔥 只保留你需要的两个模型
+// 🔥 修改这里：只保留第一个和最后一个模型
 const MODEL_OPTIONS = [
-  { value: 'doubao-pro', label: '🟢 豆包 Pro (基础版)' },
-  { value: 'doubao-plus', label: '🚀 豆包 Pro (新版/增强版)' }, 
+  { value: 'doubao-pro', label: '🟢 豆包(基础版)' },
+  { value: 'doubao-latest', label: '🔥 豆包 (Pro版）' }, 
 ];
 
 export function ChatInterface() {
@@ -52,13 +52,13 @@ export function ChatInterface() {
   const createNewConversation = () => {
     const newId = Date.now().toString();
     const now = Date.now();
-    
-    // 🔥 修复点：添加 updated_at 字段以满足 TypeScript 类型定义
+
+    // 包含 updated_at 修复，防止构建失败
     const newConversation: Conversation = {
       id: newId,
       title: '新对话', 
       created_at: now,
-      updated_at: now // <--- 补上了这个必须的字段
+      updated_at: now
     };
 
     const newList = [newConversation, ...conversations];
