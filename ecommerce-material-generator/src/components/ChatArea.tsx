@@ -1,9 +1,8 @@
 'use client';
 
-// 引入补丁修复 Antd 报错
 import '@ant-design/v5-patch-for-react-19';
 import { useState, useEffect, useRef } from 'react';
-import { Input, Button, Upload, Spin, Card, Tag, Space, Checkbox, message as antdMessage } from 'antd';
+import { Input, Button, Upload, Card, Tag, Space, Checkbox, message as antdMessage } from 'antd';
 import { SendOutlined, PictureOutlined, LoadingOutlined } from '@ant-design/icons';
 import type { UploadFile } from 'antd';
 import { Message, Material } from '@/types';
@@ -21,14 +20,54 @@ export function ChatArea({ conversationId, model = 'doubao-pro' }: ChatAreaProps
   const [materials, setMaterials] = useState<Record<string, Material[]>>({});
   const [input, setInput] = useState('');
   const [fileList, setFileList] = useState<UploadFile[]>([]);
-  const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [showWatermark, setShowWatermark] = useState(true);
-
-  // 存储给 AI 看的纯文本历史
+  
+  // 专门用于 AI 上下文的历史记录
   const [aiHistory, setAiHistory] = useState<any[]>([]);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // ================= 💾 核心：前端持久化逻辑 =================
+
+  // 1. 加载数据：当 conversationId 变化时，从 LocalStorage 读取
+  useEffect(() => {
+    // 定义存储的 Key，确保不同会话隔离
+    const storageKey = `chat_data_${conversationId}`;
+    const savedData = localStorage.getItem(storageKey);
+
+    if (savedData) {
+      try {
+        const parsed = JSON.parse(savedData);
+        setMessages(parsed.messages || []);
+        setMaterials(parsed.materials || {});
+        setAiHistory(parsed.aiHistory || []);
+        // 自动滚动到底部
+        setTimeout(() => scrollToBottom(), 100);
+      } catch (e) {
+        console.error("读取缓存失败", e);
+      }
+    } else {
+      // 如果是新会话，清空状态
+      setMessages([]);
+      setMaterials({});
+      setAiHistory([]);
+    }
+  }, [conversationId]);
+
+  // 2. 保存数据：当 messages 或 materials 变化时，存入 LocalStorage
+  useEffect(() => {
+    if (!conversationId) return;
+    const storageKey = `chat_data_${conversationId}`;
+    const dataToSave = {
+      messages,
+      materials,
+      aiHistory
+    };
+    localStorage.setItem(storageKey, JSON.stringify(dataToSave));
+  }, [messages, materials, aiHistory, conversationId]);
+
+  // ========================================================
 
   useEffect(() => {
     scrollToBottom();
@@ -58,7 +97,7 @@ export function ChatArea({ conversationId, model = 'doubao-pro' }: ChatAreaProps
     const tempUserMsgId = Date.now().toString();
     const currentInput = input;
     
-    // 1. 界面立即显示用户消息
+    // 构造用户消息
     const tempUserMsg: Message = {
         id: tempUserMsgId,
         conversation_id: conversationId,
@@ -67,11 +106,12 @@ export function ChatArea({ conversationId, model = 'doubao-pro' }: ChatAreaProps
         images: [], 
         created_at: Date.now()
     };
+
     setMessages(prev => [...prev, tempUserMsg]);
     setInput('');
 
     try {
-      // 图片上传
+      // 处理图片上传
       const imageUrls: string[] = [];
       for (const file of fileList) {
         if (file.originFileObj) {
@@ -83,11 +123,12 @@ export function ChatArea({ conversationId, model = 'doubao-pro' }: ChatAreaProps
         }
       }
       
+      // 更新带图片的消息
       if (imageUrls.length > 0) {
           setMessages(prev => prev.map(m => m.id === tempUserMsgId ? {...m, images: imageUrls} : m));
       }
 
-      // 2. 发送请求 (带上 History)
+      // 请求 AI
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -96,7 +137,7 @@ export function ChatArea({ conversationId, model = 'doubao-pro' }: ChatAreaProps
           user_message: currentInput,
           images: imageUrls.length > 0 ? imageUrls : undefined,
           model: model, 
-          history: aiHistory // 把历史记录发给后端
+          history: aiHistory // 发送历史记录
         }),
       });
 
@@ -107,7 +148,7 @@ export function ChatArea({ conversationId, model = 'doubao-pro' }: ChatAreaProps
       } else {
         const aiMsgId = data.message_id || Date.now().toString();
         
-        // 更新 AI 消息界面
+        // AI 消息
         const aiMsg: Message = {
             id: aiMsgId,
             conversation_id: conversationId,
@@ -126,15 +167,8 @@ export function ChatArea({ conversationId, model = 'doubao-pro' }: ChatAreaProps
         setMaterials(prev => ({ ...prev, [aiMsgId]: newMaterials }));
         setMessages(prev => [...prev, aiMsg]);
 
-        // ✅✅✅ 关键修正点 ✅✅✅
-        // 我们必须存入 data.rawContent (原始 JSON 字符串)
-        // 而不是 JSON.stringify(data.materials) (那是前端加工过的数组，AI 看不懂)
-        const aiResponseContent = data.rawContent || JSON.stringify({ 
-            title: "生成内容丢失", 
-            sellingPoints: ["请重试"], 
-            atmosphere: "系统提示" 
-        });
-
+        // 存入 AI 历史上下文
+        const aiResponseContent = data.rawContent || JSON.stringify({ title: "...", sellingPoints: [] });
         setAiHistory(prev => [
             ...prev,
             { role: 'user', content: currentInput },
@@ -142,7 +176,6 @@ export function ChatArea({ conversationId, model = 'doubao-pro' }: ChatAreaProps
         ]);
 
         setFileList([]);
-        // antdMessage.success('生成成功！'); // 不需要每次都弹窗，体验更好
       }
     } catch (error: any) {
       antdMessage.error(error.message || '生成失败');
@@ -158,8 +191,8 @@ export function ChatArea({ conversationId, model = 'doubao-pro' }: ChatAreaProps
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#999' }}>
             <div style={{ textAlign: 'center' }}>
               <h2>欢迎使用电商素材生成工具</h2>
-              <p>当前模型：<Tag color="blue">{model}</Tag></p>
-              <p>上传商品图片并描述商品信息，AI 将为您生成营销素材</p>
+              <p>当前会话 ID：<Tag>{conversationId}</Tag></p>
+              <p>数据将自动保存在您的浏览器中</p>
             </div>
           </div>
         ) : (
@@ -180,7 +213,6 @@ export function ChatArea({ conversationId, model = 'doubao-pro' }: ChatAreaProps
                 ) : (
                   <div style={{ maxWidth: '80%', minWidth: '300px' }}>
                     <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-                      
                       {(() => {
                         const relatedImage = findLatestImage(index);
                         const atmosphereMat = materials[msg.id]?.find(m => m.type === 'atmosphere');
@@ -231,7 +263,6 @@ export function ChatArea({ conversationId, model = 'doubao-pro' }: ChatAreaProps
                         }
                         return null;
                       })()}
-
                       {materials[msg.id]?.map((material) => (
                         <MaterialCard key={material.id} material={material} />
                       ))}
