@@ -20,6 +20,10 @@ const SYSTEM_PROMPT = `
 }
 `;
 
+// 🔥 核心修改：定义支持图片的模型列表
+// 假设你这两个 Doubao 模型都是支持 Vision 的版本，如果不确定，先都加上
+const VISION_CAPABLE_MODELS = ['doubao-pro', 'doubao-plus']; 
+
 export async function POST(request: NextRequest) {
   try {
     const API_KEY = process.env.DOUBAO_API_KEY;
@@ -32,30 +36,35 @@ export async function POST(request: NextRequest) {
     const client = new OpenAI({ apiKey: API_KEY, baseURL: BASE_URL });
 
     // 读取前端发送的数据
-    const { conversation_id, user_message, images, model = 'doubao-pro', history = [] } = await request.json();
+    const { user_message, images, model = 'doubao-pro', history = [] } = await request.json();
 
-    // 模型 ID 映射
+    // 🔥 核心修改：只保留你需要的两个模型映射
     const MODEL_MAP: Record<string, string | undefined> = {
-      'doubao-pro': process.env.DOUBAO_MODEL_ID,
-      'doubao-flash': process.env.DOUBAO_FLASH_MODEL_ID,
-      'doubao-dream': process.env.DOUBAO_DREAM_MODEL_ID,
-      'deepseek-v3': process.env.DEEPSEEK_MODEL_ID,
+      'doubao-pro': process.env.DOUBAO_MODEL_ID,       // 第一个
+      'doubao-plus': process.env.DOUBAO_MODEL_ID_two,  // 最后一个 (新添加的)
     };
+    
     const targetModelId = MODEL_MAP[model];
 
     if (!targetModelId) {
-      return NextResponse.json({ error: `未找到模型 ${model} 的 ID 配置` }, { status: 500 });
+      return NextResponse.json({ error: `未找到模型 ${model} 的 ID 配置，请检查环境变量` }, { status: 500 });
     }
 
-    // ==========================================
-    // 🔥 构建支持视觉 (Vision) 的消息体
-    // ==========================================
-    let userContent: any[] = [{ type: 'text', text: user_message || "请分析这张图片，生成营销素材" }];
+    // 检查模型是否支持图片
+    const hasImages = images && Array.isArray(images) && images.length > 0;
+    const isVisionModel = VISION_CAPABLE_MODELS.includes(model);
 
-    // 如果包含图片 (Base64)，添加到消息中
-    if (images && Array.isArray(images) && images.length > 0) {
+    if (hasImages && !isVisionModel) {
+      return NextResponse.json({ 
+        error: `当前选择的模型不支持图片识别，请切换其他模型。` 
+      }, { status: 400 });
+    }
+
+    // 构建消息体
+    let userContent: any[] = [{ type: 'text', text: user_message || "请分析商品信息，生成营销素材" }];
+
+    if (hasImages && isVisionModel) {
       images.forEach((imgUrl: string) => {
-        // 确保格式符合 OpenAI Vision 标准
         userContent.push({
           type: "image_url",
           image_url: {
@@ -65,7 +74,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // 处理历史记录 (仅保留文本，简化处理以防 token 超限)
+    // 处理历史记录
     const cleanHistory = history.map((h: any) => ({
       role: h.role,
       content: typeof h.content === 'string' ? h.content : JSON.stringify(h.content).slice(0, 200) + '...'
@@ -77,7 +86,7 @@ export async function POST(request: NextRequest) {
       { role: 'user', content: userContent }
     ];
 
-    console.log(`[请求AI] 模型: ${model}, 图片数: ${images?.length || 0}`);
+    console.log(`[请求AI] 模型: ${model}, 图片数: ${hasImages ? images.length : 0}`);
 
     // 调用大模型
     const response = await client.chat.completions.create({
@@ -93,7 +102,6 @@ export async function POST(request: NextRequest) {
     let materialsData;
 
     try {
-      // 清理可能的 Markdown 标记
       cleanJson = aiContent.replace(/```json/g, '').replace(/```/g, '').trim();
       materialsData = JSON.parse(cleanJson);
     } catch (e) {
