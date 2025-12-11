@@ -1,7 +1,8 @@
 // src/lib/db-operations.ts
 
-// ✅ 这里的代码只为了欺骗编译器和防止 Vercel 报错
-// 真正的存储我们放在前端 (ChatArea.tsx) 做
+// ---------------------------------------------------------
+// 🚨 Vercel 适配版数据库 (Mock DB)
+// ---------------------------------------------------------
 
 export interface Message {
   id: string;
@@ -21,10 +22,31 @@ export interface Material {
   created_at: number;
 }
 
-// 所有函数都返回“假成功”，什么都不做
-export function getMessages(conversationId: string) { return []; }
-export function createMessage(data: any) { return { id: Date.now().toString(), ...data }; }
-export function createMaterial(data: any) { return { id: Date.now().toString(), ...data }; }
+// ---------------------------------------------------------
+// 核心函数 (Mock)
+// ---------------------------------------------------------
+
+// 1. 获取会话列表 (兼容两个名字)
 export function getConversations() { return []; }
-export function createConversation(title: string) { return { id: Date.now().toString(), title }; }
+export const getAllConversations = getConversations; // <--- 关键修复：加了这个别名
+
+// 2. 获取消息列表
+export function getMessages(conversationId: string) { return []; }
+
+// 3. 创建消息
+export function createMessage(data: any) { 
+  return { id: Date.now().toString(), created_at: Date.now(), ...data }; 
+}
+
+// 4. 创建素材
+export function createMaterial(data: any) { 
+  return { id: Date.now().toString(), created_at: Date.now(), ...data }; 
+}
+
+// 5. 创建会话
+export function createConversation(title: string) { 
+  return { id: Date.now().toString(), title: title || '新会话', created_at: Date.now() }; 
+}
+
+// 6. 获取素材
 export function getMaterials(messageId: string) { return []; }
