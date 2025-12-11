@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createConversation, getAllConversations } from '@/lib/db-operations';
+import { createConversation, getConversations } from '@/lib/db-operations';
 
 export async function GET() {
   try {
-    const conversations = getAllConversations();
+    // 获取所有对话列表
+    const conversations = getConversations();
     return NextResponse.json({ conversations });
   } catch (error: any) {
     return NextResponse.json(
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 创建新对话
     const conversation = createConversation(title);
     return NextResponse.json({ conversation });
   } catch (error: any) {
